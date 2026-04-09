@@ -24,7 +24,7 @@ exports.addReview = async (req, res) => {
     const roomObjectId = new mongoose.Types.ObjectId(roomId);
 
     // ✅ Check booking exists & approved
-    const booking = await Booking.findOne({
+    /*const booking = await Booking.findOne({
       user: req.user._id,
       room: roomObjectId,
       
@@ -35,7 +35,7 @@ exports.addReview = async (req, res) => {
         message: "You can review only booked & approved rooms",
       });
     }
-
+*/
     // ✅ After stay only
     /*const today = new Date();
     if (booking.toDate > today) {
@@ -44,26 +44,26 @@ exports.addReview = async (req, res) => {
       });
     }*/
 
-    // ✅ Prevent duplicate
-    const existingReview = await Review.findOne({
+
+    // ✅ Update if exists, else create
+    let review = await Review.findOne({
       user: req.user._id,
       room: roomObjectId,
     });
 
-    if (existingReview) {
-      return res.status(400).json({
-        message: "Already reviewed",
+    if (review) {
+      review.rating = rating;
+      review.comment = comment;
+      await review.save();
+    } else {
+      review = await Review.create({
+        user: req.user._id,
+        room: roomObjectId,
+        rating,
+        comment,
+        isApproved: true, // IMPORTANT
       });
     }
-
-    // ✅ Create review
-    const review = await Review.create({
-      user: req.user._id,
-      room: roomObjectId,
-      rating,
-      comment,
-      isApproved: true, // IMPORTANT
-    });
 
     // ✅ Update rating
     const stats = await Review.aggregate([
