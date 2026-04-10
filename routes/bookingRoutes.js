@@ -1,5 +1,20 @@
+
 const express = require('express');
 const router = express.Router();
+const Booking = require('../models/Booking');
+
+// Public: Get all approved bookings for a room (for date picker)
+router.get('/room/:roomId', async (req, res) => {
+  try {
+    const bookings = await Booking.find({
+      room: req.params.roomId,
+      status: 'approved',
+    }).select('fromDate toDate');
+    res.json({ success: true, bookings });
+  } catch (err) {
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
 
 const { protect, admin } = require('../middleware/authMiddleware');
 
@@ -26,6 +41,17 @@ router.post('/verify', protect, verifyBookingPayment);
 // Get logged-in user's bookings
 router.get('/my', protect, getMyBookings);
 
+// ===== ADMIN ROUTES =====
+
+// Get all bookings
+router.get('/admin', protect, admin, getAllBookings);
+
+// Update booking status
+router.put('/admin/:id/status', protect, admin, updateBookingStatus);
+
+// Analytics (revenue, bookings)
+router.get('/admin/analytics', protect, admin, getAnalytics);
+
 // Get a booking by ID (for billing/receipt)
 router.get('/:id', protect, async (req, res) => {
   try {
@@ -39,17 +65,5 @@ router.get('/:id', protect, async (req, res) => {
 
 // Cancel booking
 router.delete('/:id', protect, cancelBooking);
-
-
-// ===== ADMIN ROUTES =====
-
-// Get all bookings
-router.get('/admin', protect, admin, getAllBookings);
-
-// Update booking status
-router.put('/admin/:id/status', protect, admin, updateBookingStatus);
-
-// Analytics (revenue, bookings)
-router.get('/admin/analytics', protect, admin, getAnalytics);
 
 module.exports = router;

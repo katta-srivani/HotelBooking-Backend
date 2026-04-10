@@ -23,6 +23,8 @@ const roomRoutes = require('./routes/roomRoutes');
 
 const bookingRoutes=require('./routes/bookingRoutes');
 const reviewRoutes = require('./routes/reviewRoutes');
+
+const favoriteRoutes = require('./routes/favoriteRoutes');
 const offerRoutes = require('./routes/offerRoutes');
 
 // All routes (normal order)
@@ -31,6 +33,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/rooms', roomRoutes);
 app.use('/api/reviews', reviewRoutes);
+app.use('/api/favorites', favoriteRoutes);
 app.use('/api/offers', offerRoutes);
 
 // Default route
@@ -41,7 +44,7 @@ app.get('/', (req, res) => {
 // Error handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).json({
+  res.status(err.statusCode || 500).json({
     message: err.message || 'Something went wrong',
   });
 });

@@ -52,6 +52,18 @@ const offerSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+
+    emailDispatch: {
+      totalRecipients: { type: Number, default: 0 },
+      sentCount: { type: Number, default: 0 },
+      failedCount: { type: Number, default: 0 },
+      lastSentAt: { type: Date },
+      status: {
+        type: String,
+        enum: ['pending', 'completed', 'failed', 'no-users'],
+        default: 'pending',
+      },
+    },
   },
   { timestamps: true }
 );

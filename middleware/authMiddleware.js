@@ -27,10 +27,10 @@ exports.protect = async (req, res, next) => {
 
     const err = new Error('No token provided');
     err.statusCode = 401;
-    next(err);
+    return next(err);
   } catch (error) {
     error.statusCode = 401;
-    next(error);
+    return next(error);
   }
 };
 
@@ -39,5 +39,5 @@ exports.admin = (req, res, next) => {
   if (req.user && req.user.role === 'admin') return next();
   const err = new Error('Admin access denied');
   err.statusCode = 403;
-  next(err);
+  return next(err);
 };

@@ -9,9 +9,6 @@ const {
   updateProfile,
   changePassword,
   getUserBookings,
-  getFavoriteRooms,
-  addFavoriteRoom,
-  removeFavoriteRoom,
   getAllUsers,
   deleteUser,
 } = require('../controllers/UserController');
@@ -29,9 +26,6 @@ router.get('/profile', protect, asyncHandler(getProfile));
 router.put('/update-profile', protect, asyncHandler(updateProfile));
 router.post('/change-password', protect, asyncHandler(changePassword));
 router.get('/bookings', protect, asyncHandler(getUserBookings));
-router.get('/favorites', protect, asyncHandler(getFavoriteRooms));
-router.post('/add-favorite/:roomId', protect, asyncHandler(addFavoriteRoom));
-router.delete('/remove-favorite/:roomId', protect, asyncHandler(removeFavoriteRoom));
 
 // Admin routes
 router.get('/', protect, admin, asyncHandler(getAllUsers));

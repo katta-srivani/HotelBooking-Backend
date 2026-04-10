@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 
+
 const userSchema = new mongoose.Schema({
   firstName: { type: String, required: true },
   lastName: { type: String, default: '' },
@@ -11,10 +12,22 @@ const userSchema = new mongoose.Schema({
   role: { type: String, default: 'user' },
   profileImage: { type: String, default: '' },
   bookingHistory: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Booking' }],
-  favoriteRooms: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Room' }],
-
-  // Email verification removed
+  resetPasswordToken: { type: String },
+  resetPasswordExpires: { type: Date },
 }, { timestamps: true });
+// Generate and set password reset token
+userSchema.methods.createPasswordResetToken = function () {
+  const resetToken = crypto.randomBytes(32).toString('hex');
+  this.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+  this.resetPasswordExpires = Date.now() + 1000 * 60 * 15; // 15 minutes
+  return resetToken;
+};
+
+// Clear password reset token
+userSchema.methods.clearPasswordResetToken = function () {
+  this.resetPasswordToken = undefined;
+  this.resetPasswordExpires = undefined;
+};
 
 // Hash password
 userSchema.pre('save', async function () {

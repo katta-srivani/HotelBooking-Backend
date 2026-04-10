@@ -19,6 +19,10 @@ const bookingSchema = new mongoose.Schema(
 
     totalAmount: { type: Number, required: true },
     totalDays: { type: Number, required: true },
+    subtotal: { type: Number, default: 0 },
+    taxAmount: { type: Number, default: 0 },
+    grossAmount: { type: Number, default: 0 },
+    discountAmount: { type: Number, default: 0 },
 
     paymentStatus: {
       type: String,

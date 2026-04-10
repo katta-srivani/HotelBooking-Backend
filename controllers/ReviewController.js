@@ -7,7 +7,7 @@ const Room = require("../models/Room");
 exports.getAllReviews = async (req, res) => {
   try {
     const reviews = await Review.find()
-      .populate("user", "name")
+      .populate("user", "firstName lastName email")
       .populate("room", "title");
 
     res.json({ success: true, reviews });
@@ -21,48 +21,44 @@ exports.addReview = async (req, res) => {
   try {
     const { roomId, rating, comment } = req.body;
 
+    if (!roomId || !rating || !comment) {
+      return res.status(400).json({ message: "roomId, rating and comment are required" });
+    }
+
+    const numericRating = Number(rating);
+    if (Number.isNaN(numericRating) || numericRating < 1 || numericRating > 5) {
+      return res.status(400).json({ message: "Rating must be between 1 and 5" });
+    }
+
     const roomObjectId = new mongoose.Types.ObjectId(roomId);
 
-    // ✅ Check booking exists & approved
-    /*const booking = await Booking.findOne({
-      user: req.user._id,
-      room: roomObjectId,
-      
-    });
+    // Removed restriction: allow reviews before stay completion
 
-    if (!booking) {
-      return res.status(400).json({
-        message: "You can review only booked & approved rooms",
-      });
-    }
-*/
-    // ✅ After stay only
-    /*const today = new Date();
-    if (booking.toDate > today) {
-      return res.status(400).json({
-        message: "Review allowed only after stay completion",
-      });
-    }*/
-
-
-    // ✅ Update if exists, else create
-    let review = await Review.findOne({
+    // ✅ One review per user per room: re-submit updates existing review
+    const existingReview = await Review.findOne({
       user: req.user._id,
       room: roomObjectId,
     });
 
-    if (review) {
-      review.rating = rating;
-      review.comment = comment;
-      await review.save();
+    let review;
+    let message;
+
+    if (existingReview) {
+      existingReview.rating = numericRating;
+      existingReview.comment = comment;
+      existingReview.isApproved = true;
+      review = await existingReview.save();
+      message = "Review updated successfully";
     } else {
+      // No admin approval required for first review submission.
       review = await Review.create({
         user: req.user._id,
         room: roomObjectId,
-        rating,
+        rating: numericRating,
         comment,
-        isApproved: true, // IMPORTANT
+        isApproved: true,
       });
+      message = "Review submitted successfully";
     }
 
     // ✅ Update rating
@@ -84,7 +80,7 @@ exports.addReview = async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: "Review added",
+      message,
       review,
     });
 
@@ -177,7 +173,7 @@ exports.deleteReview = async (req, res) => {
 exports.getUnapprovedReviews = async (req, res) => {
   try {
     const reviews = await Review.find({ isApproved: false })
-      .populate("user", "name")
+      .populate("user", "firstName lastName email")
       .populate("room", "title");
 
     res.json({
