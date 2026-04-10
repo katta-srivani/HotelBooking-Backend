@@ -5,7 +5,7 @@ const {
   addFavorite,
   removeFavorite,
   getFavorites,
-} = require('../controllers/favoriteController');
+} = require('../controllers/FavoriteController');
 
 const { protect } = require('../middleware/authMiddleware');
 
