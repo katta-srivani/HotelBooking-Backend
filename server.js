@@ -9,7 +9,14 @@ connectDB();
 const app = express();
 
 // Middlewares
-app.use(cors());
+const allowedOrigins = [
+  'http://localhost:3000',
+  'https://hotel-frontendtasskk.netlify.app'
+];
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true,
+}));
 app.use(express.json()); // ✅ NOW SAFE (no webhook)
 
 // Cron Jobs
@@ -22,7 +29,7 @@ const userRoutes = require('./routes/userRoutes');
 const roomRoutes = require('./routes/roomRoutes');
 const bookingRoutes=require('./routes/bookingRoutes');
 const reviewRoutes = require('./routes/reviewRoutes');
-const favoriteRoutes = require('./routes/FavoriteRoutes');
+const favoriteRoutes = require('./routes/favoriteRoutes');
 const offerRoutes = require('./routes/offerRoutes');
 
 // All routes (normal order)
