@@ -20,10 +20,8 @@ scheduleBookingReminders();
 const notificationRoutes = require('./routes/notificationRoutes');
 const userRoutes = require('./routes/userRoutes');
 const roomRoutes = require('./routes/roomRoutes');
-
 const bookingRoutes=require('./routes/bookingRoutes');
 const reviewRoutes = require('./routes/reviewRoutes');
-
 const favoriteRoutes = require('./routes/favoriteRoutes');
 const offerRoutes = require('./routes/offerRoutes');
 
