@@ -37,7 +37,7 @@ app.use(
 );
 
 // ✅ VERY IMPORTANT (fix preflight errors)
-app.options("*", cors());
+app.options("/*", cors());
 
 
 // Middlewares
