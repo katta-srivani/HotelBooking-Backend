@@ -10,46 +10,34 @@ const app = express();
 
 
 // ✅ CORS FIX (supports localhost + Netlify + Vercel)
-
- const allowedOrigins = [
+const allowedOrigins = [
   "http://localhost:3000",
-  "https://hotel-frontendtasskk.netlify.app"
+  /https:\/\/hotel-frontend-[a-z0-9]+\.vercel\.app$/,
+  /https:\/\/hotel-frontend[a-z0-9\-]*\.netlify\.app$/
 ];
 
 app.use(
   cors({
     origin: function (origin, callback) {
+      // allow Postman / mobile apps (no origin)
       if (!origin) return callback(null, true);
 
-      if (
-        allowedOrigins.includes(origin) ||
-        origin.endsWith(".vercel.app") // ✅ THIS LINE FIXES EVERYTHING
-      ) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORS"));
+      for (const allowed of allowedOrigins) {
+        if (typeof allowed === 'string' && allowed === origin) {
+          return callback(null, true);
+        }
+        if (allowed instanceof RegExp && allowed.test(origin)) {
+          return callback(null, true);
+        }
       }
+      return callback(new Error("Not allowed by CORS"));
     },
     credentials: true,
   })
 );
 
 // ✅ VERY IMPORTANT (fix preflight errors)
-app.options("*", cors({
-  origin: function (origin, callback) {
-    if (!origin) return callback(null, true);
-
-    if (
-      allowedOrigins.includes(origin) ||
-      origin.endsWith(".vercel.app")
-    ) {
-      callback(null, true);
-    } else {
-      callback(new Error("Not allowed by CORS"));
-    }
-  },
-  credentials: true,
-}));
+app.options("*", cors());
 
 
 // Middlewares
