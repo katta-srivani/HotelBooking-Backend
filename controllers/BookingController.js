@@ -64,11 +64,12 @@ exports.createBooking = async (req, res) => {
       return res.status(400).json({ message: 'Invalid dates' });
     }
 
-    // ✅ Only check CONFIRMED bookings
+    // ✅ Only check CONFIRMED bookings (allow back-to-back, block only true overlaps)
     const existing = await Booking.find({
       room: roomId,
       status: 'approved',
-      $or: [{ fromDate: { $lte: end }, toDate: { $gte: start } }],
+      fromDate: { $lt: end },
+      toDate: { $gt: start }
     });
 
     if (existing.length > 0) {
