@@ -8,31 +8,54 @@ connectDB();
 
 const app = express();
 
-// Middlewares
+
+// ✅ CORS FIX (supports localhost + Netlify + Vercel)
 const allowedOrigins = [
-  'http://localhost:3000',
-  'https://hotel-frontendtasskk.netlify.app'
+  "http://localhost:3000",
+  "https://hotel-frontendtasskk.netlify.app",
+  "https://hotel-frontend-gilt.vercel.app"
 ];
-app.use(cors({
-  origin: allowedOrigins,
-  credentials: true,
-}));
-app.use(express.json()); // ✅ NOW SAFE (no webhook)
+
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      // allow Postman / mobile apps (no origin)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      } else {
+        return callback(new Error("Not allowed by CORS"));
+      }
+    },
+    credentials: true,
+  })
+);
+
+// ✅ VERY IMPORTANT (fix preflight errors)
+app.options("*", cors());
+
+
+// Middlewares
+app.use(express.json());
+
 
 // Cron Jobs
 const { scheduleBookingReminders } = require('./utils/cron');
 scheduleBookingReminders();
 
+
 // Routes
 const notificationRoutes = require('./routes/notificationRoutes');
 const userRoutes = require('./routes/userRoutes');
 const roomRoutes = require('./routes/roomRoutes');
-const bookingRoutes=require('./routes/bookingRoutes');
+const bookingRoutes = require('./routes/bookingRoutes');
 const reviewRoutes = require('./routes/reviewRoutes');
-const favoriteRoutes = require('./routes/FavoriteRoutes');
+const favoriteRoutes = require('./routes/FavoriteRoutes'); // ✅ correct case
 const offerRoutes = require('./routes/offerRoutes');
 
-// All routes (normal order)
+
+// API Routes
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/users', userRoutes);
@@ -41,19 +64,24 @@ app.use('/api/reviews', reviewRoutes);
 app.use('/api/favorites', favoriteRoutes);
 app.use('/api/offers', offerRoutes);
 
+
 // Default route
 app.get('/', (req, res) => {
   res.send('Hotel Booking API is running...');
 });
 
+
 // Error handler
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  console.error("❌ ERROR:", err.message);
+
   res.status(err.statusCode || 500).json({
     message: err.message || 'Something went wrong',
   });
 });
 
+
+// PORT
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
