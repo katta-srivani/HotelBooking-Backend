@@ -22,7 +22,7 @@ const userRoutes = require('./routes/userRoutes');
 const roomRoutes = require('./routes/roomRoutes');
 const bookingRoutes=require('./routes/bookingRoutes');
 const reviewRoutes = require('./routes/reviewRoutes');
-const favoriteRoutes = require('./routes/favoriteRoutes');
+const favoriteRoutes = require('./routes/FavoriteRoutes');
 const offerRoutes = require('./routes/offerRoutes');
 
 // All routes (normal order)
