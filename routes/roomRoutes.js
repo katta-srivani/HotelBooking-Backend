@@ -42,9 +42,7 @@ router.put('/:id', protect, admin, updateRoom);
 router.delete('/:id', protect, admin, deleteRoom);
 
 
-// =============================
-// ⚠️ DYNAMIC ROUTE (ALWAYS LAST)
-// =============================
+
 
 // 📄 Get Room By ID
 router.get('/:id', getRoomById);
