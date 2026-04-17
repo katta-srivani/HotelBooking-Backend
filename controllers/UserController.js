@@ -39,53 +39,65 @@ const sendEmail = async (email, subject, message) => {
 // ====================== REGISTER ======================
 exports.registerUser = async (req, res, next) => {
   try {
+    console.log('[REGISTER] Received:', req.body);
     const { firstName, lastName, email, phone, password, passwordConfirm } = req.body;
     const normalizedEmail = String(email || '').trim().toLowerCase();
 
-    if (!firstName || !normalizedEmail || !phone || !password || !passwordConfirm)
+    if (!firstName || !normalizedEmail || !phone || !password || !passwordConfirm) {
+      console.log('[REGISTER] Missing required fields');
       return res.status(400).json({ success: false, message: 'All fields are required' });
-
-    if (password !== passwordConfirm)
-      return res.status(400).json({ success: false, message: 'Passwords do not match' });
-
-    const userExists = await User.findOne({ email: normalizedEmail });
-    if (userExists)
-      return res.status(409).json({ success: false, message: 'Email already exists' });
-
-    const user = await User.create({
-      firstName,
-      lastName,
-      email: normalizedEmail,
-      phone,
-      password
-    });
-
-    const token = generateToken(user._id);
-
-    // Notification
-    await Notification.create({
-      user: user._id,
-      message: '🎉 Welcome! Your account has been created.',
-      type: 'welcome',
-    });
-
-    // Send welcome email
-    try {
-      await sendEmail(
-        user.email,
-        'Welcome to Hotel Booking!',
-        `<div style="font-family:sans-serif;padding:20px"><h2>Welcome, ${user.firstName}!</h2><p>Thank you for registering at our hotel booking platform. We hope you enjoy your experience!</p></div>`
-      );
-    } catch (emailErr) {
-      console.error('❌ Failed to send welcome email:', emailErr);
     }
 
-    res.status(201).json({
-      success: true,
-      message: 'Registered successfully.',
-      data: { user, token },
-    });
+    if (password !== passwordConfirm) {
+      console.log('[REGISTER] Passwords do not match');
+      return res.status(400).json({ success: false, message: 'Passwords do not match' });
+    }
+
+    const userExists = await User.findOne({ email: normalizedEmail });
+    if (userExists) {
+      console.log('[REGISTER] Email already exists:', normalizedEmail);
+      return res.status(409).json({ success: false, message: 'Email already exists' });
+    }
+
+    try {
+      const user = await User.create({
+        firstName,
+        lastName,
+        email: normalizedEmail,
+        phone,
+        password
+      });
+      const token = generateToken(user._id);
+
+      // Notification
+      await Notification.create({
+        user: user._id,
+        message: '🎉 Welcome! Your account has been created.',
+        type: 'welcome',
+      });
+
+      // Send welcome email
+      try {
+        await sendEmail(
+          user.email,
+          'Welcome to Hotel Booking!',
+          `<div style="font-family:sans-serif;padding:20px"><h2>Welcome, ${user.firstName}!</h2><p>Thank you for registering at our hotel booking platform. We hope you enjoy your experience!</p></div>`
+        );
+      } catch (emailErr) {
+        console.error('❌ Failed to send welcome email:', emailErr);
+      }
+
+      res.status(201).json({
+        success: true,
+        message: 'Registered successfully.',
+        data: { user, token },
+      });
+    } catch (createErr) {
+      console.error('[REGISTER] User creation error:', createErr);
+      return res.status(500).json({ success: false, message: 'User creation failed', error: createErr.message });
+    }
   } catch (error) {
+    console.error('[REGISTER] Unexpected error:', error);
     next(error);
   }
 };
@@ -95,10 +107,13 @@ exports.registerUser = async (req, res, next) => {
 // ====================== LOGIN ======================
 exports.loginUser = async (req, res, next) => {
   try {
+
     const email = String(req.body?.email || '').trim().toLowerCase();
     const password = String(req.body?.password || '').trim();
+    console.log('[LOGIN] Received:', { email, password: password ? '***' : '' });
 
     if (!email || !password) {
+      console.log('[LOGIN] Missing email or password');
       return res.status(400).json({
         success: false,
         message: 'Email & password required',
@@ -106,7 +121,9 @@ exports.loginUser = async (req, res, next) => {
     }
 
     const user = await User.findOne({ email }).select('+password');
+    console.log('[LOGIN] User found:', !!user);
     if (!user) {
+      console.log('[LOGIN] No user found for email:', email);
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials',
@@ -114,7 +131,9 @@ exports.loginUser = async (req, res, next) => {
     }
 
     const isPasswordValid = await user.matchPassword(password);
+    console.log('[LOGIN] Password valid:', isPasswordValid);
     if (!isPasswordValid) {
+      console.log('[LOGIN] Password did not match for user:', email);
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials',
