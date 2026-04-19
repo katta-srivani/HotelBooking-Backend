@@ -12,6 +12,7 @@ const app = express();
 // ✅ CORS FIX (supports localhost + Netlify + Vercel)
 const allowedOrigins = [
   "http://localhost:3000",
+  "https://hotel-frontend-gm3k-msynqv4vg-katta-srivanis-projects.vercel.app",
   /https:\/\/hotel-frontend-[a-z0-9]+\.vercel\.app$/,
   /https:\/\/hotel-frontend[a-z0-9\-]*\.netlify\.app$/
 ];
