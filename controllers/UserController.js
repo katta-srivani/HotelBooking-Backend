@@ -1,3 +1,46 @@
+// ====================== FORGOT PASSWORD ======================
+exports.forgotPassword = async (req, res, next) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ message: 'Email is required' });
+  const user = await User.findOne({ email });
+  if (!user) return res.status(404).json({ message: 'User not found' });
+
+  const resetToken = user.createPasswordResetToken();
+  await user.save({ validateBeforeSave: false });
+
+  const resetUrl = `${process.env.CLIENT_URL || 'http://localhost:3000'}/reset-password/${resetToken}`;
+  const message = `
+    <h3>Password Reset Request</h3>
+    <p>Click the link below to reset your password:</p>
+    <a href="${resetUrl}">${resetUrl}</a>
+    <p>This link will expire in 15 minutes.</p>
+  `;
+  try {
+    await sendEmail(user.email, 'Password Reset', message);
+    res.status(200).json({ message: 'Password reset link sent to email' });
+  } catch (err) {
+    user.clearPasswordResetToken();
+    await user.save({ validateBeforeSave: false });
+    res.status(500).json({ message: 'Failed to send email' });
+  }
+};
+
+// ====================== RESET PASSWORD ======================
+exports.resetPassword = async (req, res, next) => {
+  const { token } = req.params;
+  const { password } = req.body;
+  if (!token || !password) return res.status(400).json({ message: 'Token and password are required' });
+  const hashedToken = require('crypto').createHash('sha256').update(token).digest('hex');
+  const user = await User.findOne({
+    resetPasswordToken: hashedToken,
+    resetPasswordExpires: { $gt: Date.now() },
+  });
+  if (!user) return res.status(400).json({ message: 'Invalid or expired token' });
+  user.password = password;
+  user.clearPasswordResetToken();
+  await user.save();
+  res.status(200).json({ message: 'Password reset successful' });
+};
 const User = require('../models/User');
 const Notification = require('../models/Notification'); // ✅ NEW
 const jwt = require('jsonwebtoken');

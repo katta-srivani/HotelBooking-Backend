@@ -11,6 +11,8 @@ const {
   getUserBookings,
   getAllUsers,
   deleteUser,
+  forgotPassword,     // ✅ ADD HERE
+  resetPassword       // ✅ ADD HERE
 } = require('../controllers/UserController');
 
 const { protect, admin } = require('../middleware/authMiddleware');
@@ -19,7 +21,9 @@ const { protect, admin } = require('../middleware/authMiddleware');
 router.post('/register', asyncHandler(registerUser));
 router.post('/login', asyncHandler(loginUser));
 
-// Email verification route removed
+// ✅ Forgot/Reset Password
+router.post('/forgot-password', asyncHandler(forgotPassword));
+router.post('/reset-password/:token', asyncHandler(resetPassword));
 
 // Protected routes
 router.get('/profile', protect, asyncHandler(getProfile));
