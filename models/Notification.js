@@ -11,6 +11,10 @@ const notificationSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    link: {
+      type: String,
+      default: '',
+    },
     type: {
       type: String,
       enum: ['welcome', 'booking', 'payment', 'favorite', 'login', 'security'],

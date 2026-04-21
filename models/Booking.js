@@ -1,58 +1,121 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
 const bookingSchema = new mongoose.Schema(
   {
     user: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
       required: true,
     },
 
     room: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'Room',
+      ref: "Room",
       required: true,
     },
 
-    fromDate: { type: Date, required: true },
-    toDate: { type: Date, required: true },
+    fromDate: {
+      type: Date,
+      required: true,
+    },
 
-    totalAmount: { type: Number, required: true },
-    totalDays: { type: Number, required: true },
-    subtotal: { type: Number, default: 0 },
-    taxAmount: { type: Number, default: 0 },
-    grossAmount: { type: Number, default: 0 },
-    discountAmount: { type: Number, default: 0 },
+    toDate: {
+      type: Date,
+      required: true,
+    },
+
+    totalDays: {
+      type: Number,
+      required: true,
+    },
+
+    subtotal: {
+      type: Number,
+      required: true,
+    },
+
+    taxAmount: {
+      type: Number,
+      required: true,
+    },
+
+    grossAmount: {
+      type: Number,
+      required: true,
+    },
+
+    discountAmount: {
+      type: Number,
+      default: 0,
+    },
+
+    totalAmount: {
+      type: Number,
+      required: true,
+    },
+
+    coupon: {
+      type: String,
+      default: null,
+    },
+
+    paymentMethod: {
+      type: String,
+      enum: ["cash", "online"],
+      required: true,
+      default: "online",
+    },
 
     paymentStatus: {
       type: String,
-      enum: ['pending', 'paid'],
-      default: 'pending',
+      enum: ["pending", "paid", "failed", "cancelled"],
+      default: "pending",
     },
 
     status: {
       type: String,
-      enum: ['pending', 'approved', 'cancelled', 'completed'],
-      default: 'pending',
+      enum: ["hold", "approved", "cancelled", "expired"],
+      default: "hold",
     },
 
-    razorpayOrderId: { type: String },
-    razorpayPaymentId: { type: String },
-    paymentMethod: { type: String, enum: ['online', 'cash'], default: 'online' },
+    razorpayOrderId: {
+      type: String,
+      default: null,
+    },
 
-    coupon: { type: String },
+    razorpayPaymentId: {
+      type: String,
+      default: null,
+    },
 
-   
+    guestDetails: {
+      type: Object,
+      required: true,
+    },
+
+    // ⏳ Auto-expiry (Mongo TTL index)
     expiresAt: {
       type: Date,
+      default: () => new Date(Date.now() + 10 * 60 * 1000), // 10 minutes
+      index: { expires: "10m" },
     },
-
-    rating: { type: Number, min: 1, max: 5 },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
-bookingSchema.index({ room: 1, fromDate: 1, toDate: 1 });
+/**
+ * ✅ SAFE INDEXES (for performance, not constraints)
+ */
+
+// User bookings (fast dashboard)
 bookingSchema.index({ user: 1, createdAt: -1 });
 
-module.exports = mongoose.model('Booking', bookingSchema);
+// Room availability queries
+bookingSchema.index({ room: 1, fromDate: 1, toDate: 1 });
+
+// Status filtering
+bookingSchema.index({ status: 1 });
+
+module.exports = mongoose.model("Booking", bookingSchema);

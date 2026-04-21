@@ -3,6 +3,28 @@ const express = require('express');
 const router = express.Router();
 const Booking = require('../models/Booking');
 
+// DEBUG: Delete all bookings for a room
+router.delete('/room/:roomId/all', async (req, res) => {
+  try {
+    const result = await Booking.deleteMany({ room: req.params.roomId });
+    res.json({ success: true, deletedCount: result.deletedCount });
+  } catch (err) {
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+// DEBUG: List all bookings for a room (full details)
+router.get('/room/:roomId/all', async (req, res) => {
+  try {
+    const bookings = await Booking.find({
+      room: req.params.roomId
+    }).sort({ fromDate: 1 });
+    res.json({ success: true, bookings });
+  } catch (err) {
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
 // Public: Get all approved bookings for a room (for date picker)
 router.get('/room/:roomId', async (req, res) => {
   try {
@@ -21,6 +43,8 @@ const { protect, admin } = require('../middleware/authMiddleware');
 const {
   createBooking,
   verifyBookingPayment,
+  createExistingBookingPaymentOrder,
+  verifyExistingBookingPayment,
   getMyBookings,
   getAllBookings,
   updateBookingStatus,
@@ -37,6 +61,8 @@ router.post('/', protect, createBooking);
 
 // Add generic verify route for frontend
 router.post('/verify', protect, verifyBookingPayment);
+router.post('/:id/payment-order', protect, createExistingBookingPaymentOrder);
+router.post('/:id/verify-payment', protect, verifyExistingBookingPayment);
 
 // Get logged-in user's bookings
 router.get('/my', protect, getMyBookings);

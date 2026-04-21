@@ -100,7 +100,7 @@ exports.getRoomReviews = async (req, res) => {
       isApproved: true,
     })
       .sort({ createdAt: -1 })
-      .populate("user", "name");
+      .populate("user", "firstName lastName email");
 
     const avgRating =
       reviews.length > 0

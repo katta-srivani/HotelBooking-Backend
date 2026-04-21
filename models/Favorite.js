@@ -12,11 +12,16 @@ const favoriteSchema = new mongoose.Schema(
       ref: 'Room',
       required: true,
     },
+    type: {
+      type: String,
+      enum: ['favorite', 'wishlist'],
+      default: 'favorite',
+    },
   },
   { timestamps: true }
 );
 
 // ✅ Prevent duplicates
-favoriteSchema.index({ user: 1, room: 1 }, { unique: true });
+favoriteSchema.index({ user: 1, room: 1, type: 1 }, { unique: true });
 
 module.exports = mongoose.model('Favorite', favoriteSchema);
