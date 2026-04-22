@@ -75,6 +75,14 @@ router.get('/:id', protect, async (req, res) => {
   try {
     const booking = await require('../models/Booking').findById(req.params.id).populate('room');
     if (!booking) return res.status(404).json({ message: 'Booking not found' });
+
+    const isOwner = String(booking.user) === String(req.user._id);
+    const isAdmin = req.user?.role === 'admin';
+
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ message: 'Not authorized to view this booking' });
+    }
+
     res.json({ success: true, booking });
   } catch (err) {
     res.status(500).json({ message: 'Internal Server Error' });
