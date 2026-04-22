@@ -4,40 +4,43 @@ const sendSMS = require('./sms');
 
 async function sendBookingReminders() {
   try {
-    // Example: send reminders for bookings tomorrow
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(0, 0, 0, 0);
+    const tomorrowStart = new Date();
+    tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+    tomorrowStart.setHours(0, 0, 0, 0);
 
-    const bookings = await Booking.find({ fromDate: tomorrow })
-      .populate('user', 'name email phoneNumber')
+    const tomorrowEnd = new Date(tomorrowStart);
+    tomorrowEnd.setHours(23, 59, 59, 999);
+
+    const bookings = await Booking.find({
+      fromDate: { $gte: tomorrowStart, $lte: tomorrowEnd },
+      status: { $ne: 'cancelled' },
+    })
+      .populate('user', 'firstName lastName email phone')
       .populate('room', 'title');
 
     for (const booking of bookings) {
       const { user, room, fromDate } = booking;
+      const guestName = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || 'Guest';
+      const phoneNumber = user?.phone || '';
 
-      // ✅ Send Email
       await sendEmail(
         user.email,
         'Booking Reminder',
-        `Hi ${user.name}, this is a reminder for your booking at "${room.title}" on ${fromDate.toDateString()}. We look forward to hosting you!`
+        `Hi ${guestName}, this is a reminder for your booking at "${room.title}" on ${fromDate.toDateString()}. We look forward to hosting you!`
       );
 
-      // ✅ Send SMS
-      if (user.phoneNumber) {
+      if (phoneNumber) {
         await sendSMS(
-          user.phoneNumber,
-          `Hi ${user.name}, reminder: your booking at "${room.title}" is on ${fromDate.toDateString()}.`
+          phoneNumber,
+          `Hi ${guestName}, reminder: your booking at "${room.title}" is on ${fromDate.toDateString()}.`
         );
       }
 
-      console.log(`✅ Reminder sent to ${user.email} & ${user.phoneNumber}`);
+      console.log(`Reminder sent to ${user.email}${phoneNumber ? ` & ${phoneNumber}` : ''}`);
     }
-
   } catch (error) {
-    console.error('❌ Error sending booking reminders:', error);
+    console.error('Error sending booking reminders:', error);
   }
 }
 
-// Export the function — do NOT call it here
 module.exports = sendBookingReminders;

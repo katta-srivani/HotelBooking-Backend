@@ -31,6 +31,22 @@ const reviewSchema = new mongoose.Schema(
       type: Boolean,
       default: true, // later admin can control
     },
+
+    adminReply: {
+      message: {
+        type: String,
+        default: '',
+      },
+      respondedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        default: null,
+      },
+      respondedAt: {
+        type: Date,
+        default: null,
+      },
+    },
   },
   { timestamps: true }
 );

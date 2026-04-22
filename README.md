@@ -96,7 +96,14 @@ hotel-booking-backend/
    MONGO_URI=your_mongodb_connection_string
    JWT_SECRET=your_jwt_secret
    PORT=5000
+   SMTP_HOST=your_smtp_host
+   SMTP_PORT=587
+   SMTP_USER=your_smtp_username
+   SMTP_PASS=your_smtp_password
+   SMTP_FROM_NAME=Hotel Booking App
+   SMTP_FROM_EMAIL=your_verified_sender_email
    ```
+   You can use any SMTP provider here, such as Mailtrap, SendGrid SMTP, Zoho Mail, or your own mail server.
 3. Start the server:
    ```bash
    npm run dev

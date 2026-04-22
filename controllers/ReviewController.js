@@ -8,7 +8,8 @@ exports.getAllReviews = async (req, res) => {
   try {
     const reviews = await Review.find()
       .populate("user", "firstName lastName email")
-      .populate("room", "title");
+      .populate("room", "title")
+      .populate("adminReply.respondedBy", "firstName lastName email");
 
     res.json({ success: true, reviews });
   } catch (err) {
@@ -100,7 +101,8 @@ exports.getRoomReviews = async (req, res) => {
       isApproved: true,
     })
       .sort({ createdAt: -1 })
-      .populate("user", "firstName lastName email");
+      .populate("user", "firstName lastName email")
+      .populate("adminReply.respondedBy", "firstName lastName email");
 
     const avgRating =
       reviews.length > 0
@@ -220,6 +222,39 @@ exports.approveReview = async (req, res) => {
       review,
     });
 
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.replyToReview = async (req, res) => {
+  try {
+    const message = String(req.body?.message || '').trim();
+
+    if (!message) {
+      return res.status(400).json({ message: 'Reply message is required' });
+    }
+
+    const review = await Review.findById(req.params.id);
+
+    if (!review) {
+      return res.status(404).json({ message: 'Review not found' });
+    }
+
+    review.adminReply = {
+      message,
+      respondedBy: req.user._id,
+      respondedAt: new Date(),
+    };
+
+    await review.save();
+    await review.populate("adminReply.respondedBy", "firstName lastName email");
+
+    res.json({
+      success: true,
+      message: 'Reply saved',
+      review,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

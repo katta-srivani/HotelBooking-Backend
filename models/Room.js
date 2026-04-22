@@ -9,10 +9,9 @@ const roomSchema = new mongoose.Schema(
       trim: true,
     },
 
-    roomType: {
+    category: {
       type: String,
-      required: true,
-      enum: ['Standard', 'Deluxe', 'Suite'],
+      enum: ['Luxury', 'Standard', 'Deluxe', 'Suite', 'Villa'],
     },
 
     pricePerNight: {
@@ -23,6 +22,12 @@ const roomSchema = new mongoose.Schema(
     description: {
       type: String,
       required: true,
+    },
+
+    location: {
+      type: String,
+      trim: true,
+      default: '',
     },
 
     maxGuests: {
@@ -60,7 +65,6 @@ const roomSchema = new mongoose.Schema(
       default: true,
     },
 
-    // --- NEW: Ratings ---
     ratings: [
       {
         type: Number,
@@ -68,6 +72,7 @@ const roomSchema = new mongoose.Schema(
         max: 5,
       },
     ],
+
     averageRating: {
       type: Number,
       default: 0,
@@ -78,12 +83,12 @@ const roomSchema = new mongoose.Schema(
   }
 );
 
-// Virtual for full title
+// ✅ FIXED (use category, not roomType)
 roomSchema.virtual('fullTitle').get(function () {
-  return `${this.title} - ${this.roomType} (${this.size || 'N/A'})`;
+  return `${this.title} - ${this.category} (${this.size || 'N/A'})`;
 });
 
-// Method to update average rating
+// Update average rating
 roomSchema.methods.updateAverageRating = function () {
   if (this.ratings.length === 0) {
     this.averageRating = 0;

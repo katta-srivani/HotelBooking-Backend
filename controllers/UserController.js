@@ -44,7 +44,7 @@ exports.resetPassword = async (req, res, next) => {
 const User = require('../models/User');
 const Notification = require('../models/Notification'); // ✅ NEW
 const jwt = require('jsonwebtoken');
-const nodemailer = require('nodemailer');
+const sendEmail = require('../utils/email');
 
 // ====================== TOKEN ======================
 const generateToken = (id) => {
@@ -55,28 +55,6 @@ const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRE || '7d',
   });
-};
-
-// ====================== EMAIL ======================
-const sendEmail = async (email, subject, message) => {
-  try {
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
-
-    await transporter.sendMail({
-      from: process.env.SMTP_USER,
-      to: email,
-      subject,
-      html: message,
-    });
-  } catch (error) {
-    console.error('Email Error:', error.message);
-  }
 };
 
 // ====================== REGISTER ======================
@@ -236,7 +214,7 @@ exports.updateProfile = async (req, res, next) => {
     const updatedUser = await User.findByIdAndUpdate(
       req.user.id,
       req.body,
-      { new: true, runValidators: true }
+      { returnDocument: 'after', runValidators: true }
     );
 
     res.status(200).json({

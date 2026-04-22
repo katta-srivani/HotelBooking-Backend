@@ -3,16 +3,6 @@ const express = require('express');
 const router = express.Router();
 const Booking = require('../models/Booking');
 
-// DEBUG: Delete all bookings for a room
-router.delete('/room/:roomId/all', async (req, res) => {
-  try {
-    const result = await Booking.deleteMany({ room: req.params.roomId });
-    res.json({ success: true, deletedCount: result.deletedCount });
-  } catch (err) {
-    res.status(500).json({ message: 'Internal Server Error' });
-  }
-});
-
 // DEBUG: List all bookings for a room (full details)
 router.get('/room/:roomId/all', async (req, res) => {
   try {
@@ -30,7 +20,7 @@ router.get('/room/:roomId', async (req, res) => {
   try {
     const bookings = await Booking.find({
       room: req.params.roomId,
-      status: 'approved',
+      status: { $in: ['approved', 'hold'] },
     }).select('fromDate toDate');
     res.json({ success: true, bookings });
   } catch (err) {
@@ -49,7 +39,8 @@ const {
   getAllBookings,
   updateBookingStatus,
   getAnalytics,
-  cancelBooking
+  cancelBooking,
+  resendBookingConfirmationEmail
 } = require('../controllers/BookingController');
 
 // ===== USER ROUTES =====
@@ -63,6 +54,7 @@ router.post('/', protect, createBooking);
 router.post('/verify', protect, verifyBookingPayment);
 router.post('/:id/payment-order', protect, createExistingBookingPaymentOrder);
 router.post('/:id/verify-payment', protect, verifyExistingBookingPayment);
+router.post('/:id/resend-confirmation-email', protect, resendBookingConfirmationEmail);
 
 // Get logged-in user's bookings
 router.get('/my', protect, getMyBookings);

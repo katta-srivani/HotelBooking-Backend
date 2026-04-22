@@ -1,4 +1,29 @@
 const Offer = require('../models/Offer');
+const Notification = require('../models/Notification');
+const User = require('../models/User');
+const sendEmail = require('../utils/email');
+const sendSMS = require('../utils/sms');
+
+const buildOfferEmailHtml = ({ offer, name, discountLabel, expiry }) => `
+  <div style="padding:20px;font-family:Arial,sans-serif;line-height:1.6">
+    <h2 style="margin:0 0 10px">Special Offer For You</h2>
+    <p>Hi ${name},</p>
+    <p>Your new discount code is ready:</p>
+    <p style="font-size:18px"><b>${offer.code}</b> - ${discountLabel}</p>
+    <p>Valid till: <b>${expiry}</b></p>
+    <p>Book now and save more on your next stay.</p>
+  </div>
+`;
+
+const getOfferLabels = (offer) => {
+  const expiry = offer.expiryDate ? new Date(offer.expiryDate).toLocaleDateString() : 'N/A';
+  const discountLabel =
+    offer.discountType === 'flat'
+      ? `Flat Rs ${offer.discountValue} OFF`
+      : `${offer.discountValue}% OFF`;
+
+  return { expiry, discountLabel };
+};
 
 // Create Offer (Admin)
 const createOffer = async (req, res) => {
@@ -13,13 +38,13 @@ const createOffer = async (req, res) => {
       },
     });
 
-    // Respond immediately so admin can create offer without waiting for SMTP.
-    res.status(201).json({ success: true, offer, message: 'Offer created successfully. Email notifications are being sent.' });
+    res.status(201).json({
+      success: true,
+      offer,
+      message: 'Offer created successfully. Notifications are being sent.',
+    });
 
-    // Send offer email notifications in background.
-    const User = require('../models/User');
-    const sendEmail = require('../utils/email');
-    const users = await User.find({ email: { $exists: true, $ne: '' } }, 'email firstName').lean();
+    const users = await User.find({}, 'email phone firstName').lean();
 
     if (!users.length) {
       await Offer.findByIdAndUpdate(offer._id, {
@@ -31,46 +56,72 @@ const createOffer = async (req, res) => {
           lastSentAt: new Date(),
         },
       });
-      console.log(`ℹ️ Offer ${offer.code}: no registered users with email found`);
+      console.log(`Offer ${offer.code}: no registered users found`);
       return;
     }
 
+    const { expiry, discountLabel } = getOfferLabels(offer);
     const subject = `New Offer: ${offer.code} is live`;
-    const expiry = offer.expiryDate ? new Date(offer.expiryDate).toLocaleDateString() : 'N/A';
-    const discountLabel = offer.discountType === 'flat'
-      ? `Flat ₹${offer.discountValue} OFF`
-      : `${offer.discountValue}% OFF`;
 
-    const tasks = users.map((user) => {
-      const name = user.firstName || 'Guest';
-      const html = `
-        <div style="padding:20px;font-family:Arial,sans-serif;line-height:1.6">
-          <h2 style="margin:0 0 10px">Special Offer For You</h2>
-          <p>Hi ${name},</p>
-          <p>Your new discount code is ready:</p>
-          <p style="font-size:18px"><b>${offer.code}</b> - ${discountLabel}</p>
-          <p>Valid till: <b>${expiry}</b></p>
-          <p>Book now and save more on your next stay.</p>
-        </div>
-      `;
-      return sendEmail(user.email, subject, html);
-    });
+    const emailTasks = users
+      .filter((user) => user.email)
+      .map((user) =>
+        sendEmail(
+          user.email,
+          subject,
+          buildOfferEmailHtml({
+            offer,
+            name: user.firstName || 'Guest',
+            discountLabel,
+            expiry,
+          })
+        )
+      );
 
-    const results = await Promise.allSettled(tasks);
-    const successCount = results.filter((r) => r.status === 'fulfilled').length;
-    const failedCount = results.length - successCount;
+    const notificationTasks = users.map((user) =>
+      Notification.create({
+        user: user._id,
+        type: 'booking',
+        message: `Special offer ${offer.code} is live. ${discountLabel} valid till ${expiry}.`,
+        link: '/offers',
+      })
+    );
+
+    const smsTasks = users
+      .filter((user) => user.phone)
+      .map((user) =>
+        sendSMS(
+          user.phone,
+          `Special offer ${offer.code}: ${discountLabel}. Valid till ${expiry}. Open the app to book now.`
+        )
+      );
+
+    const [emailResults, notificationResults, smsResults] = await Promise.all([
+      Promise.allSettled(emailTasks),
+      Promise.allSettled(notificationTasks),
+      Promise.allSettled(smsTasks),
+    ]);
+
+    const sentCount = emailResults.filter((result) => result.status === 'fulfilled').length;
+    const failedCount = emailResults.length - sentCount;
+    const notificationCount = notificationResults.filter((result) => result.status === 'fulfilled').length;
+    const smsCount = smsResults.filter(
+      (result) => result.status === 'fulfilled' && !result.value?.skipped
+    ).length;
 
     await Offer.findByIdAndUpdate(offer._id, {
       emailDispatch: {
-        totalRecipients: results.length,
-        sentCount: successCount,
+        totalRecipients: emailResults.length,
+        sentCount,
         failedCount,
         status: failedCount > 0 ? 'failed' : 'completed',
         lastSentAt: new Date(),
       },
     });
 
-    console.log(`📧 Offer ${offer.code}: emails sent ${successCount}/${results.length}, failed ${failedCount}`);
+    console.log(
+      `Offer ${offer.code}: emails sent ${sentCount}/${emailResults.length}, notifications created ${notificationCount}/${notificationResults.length}, sms sent ${smsCount}/${smsResults.length}`
+    );
   } catch (error) {
     console.error('Create offer error:', error);
     if (res.headersSent) {
@@ -107,11 +158,10 @@ const getOfferEmailStats = async (req, res) => {
 // Update Offer (Admin)
 const updateOffer = async (req, res) => {
   try {
-    const offer = await Offer.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true, runValidators: true }
-    );
+    const offer = await Offer.findByIdAndUpdate(req.params.id, req.body, {
+      returnDocument: 'after',
+      runValidators: true,
+    });
 
     if (!offer) {
       return res.status(404).json({ message: 'Offer not found' });
@@ -145,14 +195,18 @@ const applyOffer = async (req, res) => {
 
     const offer = await Offer.findOne({ code: code.toUpperCase() });
 
-    if (!offer || !offer.isActive)
+    if (!offer || !offer.isActive) {
       return res.status(400).json({ message: 'Invalid offer' });
+    }
 
-    if (offer.expiryDate < new Date())
+    if (offer.expiryDate < new Date()) {
       return res.status(400).json({ message: 'Offer expired' });
+    }
 
     if (normalizedAmount < Number(offer.minAmount || 0)) {
-      return res.status(400).json({ message: `Minimum amount ₹${offer.minAmount} required for this offer` });
+      return res.status(400).json({
+        message: `Minimum amount Rs ${offer.minAmount} required for this offer`,
+      });
     }
 
     let discount = 0;
@@ -184,7 +238,6 @@ const deleteOffer = async (req, res) => {
   }
 };
 
-// ✅ Export all functions properly
 module.exports = {
   createOffer,
   updateOffer,

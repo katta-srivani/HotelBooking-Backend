@@ -9,12 +9,14 @@ const {
   getUnapprovedReviews,
   approveReview,
   updateReview,
-  getAllReviews
+  getAllReviews,
+  replyToReview,
 } = require('../controllers/ReviewController');
 
 // ✅ Admin FIRST
 router.get('/admin/unapproved', protect, admin, getUnapprovedReviews);
 router.put('/admin/approve/:id', protect, admin, approveReview);
+router.put('/admin/reply/:id', protect, admin, replyToReview);
 
 
 // ✅ User

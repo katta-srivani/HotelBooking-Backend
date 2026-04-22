@@ -5,7 +5,11 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "normalize:room-images": "node normalizeRoomImages.js",
+    "smtp:check": "node smtpCheck.js",
+    "fix:booking-expiry": "node fixBookingExpiry.js",
+    "fix:booking-index": "node dropBookingTtlIndex.js"
   },
   "keywords": [],
   "author": "",

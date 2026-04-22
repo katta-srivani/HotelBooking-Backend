@@ -93,11 +93,9 @@ const bookingSchema = new mongoose.Schema(
       required: true,
     },
 
-    // ⏳ Auto-expiry (Mongo TTL index)
     expiresAt: {
       type: Date,
-      default: () => new Date(Date.now() + 10 * 60 * 1000), // 10 minutes
-      index: { expires: "10m" },
+      default: null,
     },
   },
   {

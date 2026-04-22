@@ -4,6 +4,7 @@ const cors = require('cors');
 const connectDB = require('./config/db');
 
 dotenv.config();
+const { handleRazorpayWebhook } = require('./controllers/BookingController');
 connectDB();
 
 const app = express();
@@ -11,7 +12,9 @@ const app = express();
 
 // ✅ CORS FIX (supports localhost + Netlify + Vercel)
 const allowedOrigins = [
-  "http://localhost:3000",
+  /^http:\/\/localhost:\d+$/,
+  /^http:\/\/127\.0\.0\.1:\d+$/,
+  /^https:\/\/localhost:\d+$/,
   "https://hotel-frontend-gm3k-msynqv4vg-katta-srivanis-projects.vercel.app",
   /https:\/\/hotel-frontend-[a-z0-9]+\.vercel\.app$/,
   /https:\/\/hotel-frontend[a-z0-9\-]*\.netlify\.app$/
@@ -42,6 +45,12 @@ app.use(
 
 
 // Middlewares
+app.post(
+  '/api/bookings/razorpay-webhook',
+  express.raw({ type: 'application/json' }),
+  handleRazorpayWebhook
+);
+
 app.use(express.json());
 
 

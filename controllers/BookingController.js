@@ -3,22 +3,45 @@ const Room = require('../models/Room');
 const Coupon = require('../models/Offer');
 const User = require('../models/User');
 const Notification = require('../models/Notification');
+const crypto = require('crypto');
 const { createOrder, verifyPayment } = require('../utils/payment');
 const sendEmail = require('../utils/email');
+const sendSMS = require('../utils/sms');
 
-const bookingTemplate = (user, room, booking) => `
+const bookingTemplate = (user, room, booking) => {
+  const isPaymentReceived = String(booking?.paymentStatus || '').toLowerCase() === 'paid';
+  const heading = isPaymentReceived ? 'Payment Successful - Booking Confirmed' : 'Booking Confirmed';
+  const intro = isPaymentReceived
+    ? `Your payment has been received and your booking for <b>${room.title}</b> is confirmed.`
+    : `Your booking for <b>${room.title}</b> is confirmed. Payment is currently pending.`;
+
+  return `
 <div style="padding:20px;font-family:sans-serif">
-  <h2>Booking Confirmed</h2>
+  <h2>${heading}</h2>
   <p>Hi ${user.firstName || 'Guest'},</p>
-  <p>Your booking for <b>${room.title}</b> is confirmed.</p>
+  <p>${intro}</p>
   <ul>
     <li>Check-in: ${new Date(booking.fromDate).toDateString()}</li>
     <li>Check-out: ${new Date(booking.toDate).toDateString()}</li>
     <li>Total: Rs ${booking.totalAmount}</li>
     <li>Payment method: ${booking.paymentMethod}</li>
+    <li>Payment status: ${booking.paymentStatus}</li>
+    <li>Booking ID: ${booking._id}</li>
   </ul>
 </div>
 `;
+};
+
+const bookingSmsTemplate = ({ guestName, roomTitle, booking, isPaymentReceived }) =>
+  isPaymentReceived
+    ? `Hi ${guestName}, payment received for ${roomTitle}. Your booking is confirmed for ${new Date(
+        booking.fromDate
+      ).toDateString()} to ${new Date(booking.toDate).toDateString()}. Booking ID: ${booking._id}.`
+    : `Hi ${guestName}, your booking for ${roomTitle} is confirmed from ${new Date(
+        booking.fromDate
+      ).toDateString()} to ${new Date(booking.toDate).toDateString()}. Payment is pending. Booking ID: ${
+        booking._id
+      }.`;
 
 const validateBookingDates = (fromDate, toDate) => {
   const start = new Date(fromDate);
@@ -127,12 +150,278 @@ const attachBookingToUser = async (userId, bookingId) => {
 };
 
 const createPaymentReminderNotification = async (userId, bookingId, roomTitle) => {
-  await Notification.create({
+  return Notification.create({
     user: userId,
     type: 'payment',
     message: `Billing generated for ${roomTitle}. You can do payment now using Razorpay.`,
     link: `/billing?id=${bookingId}`,
   });
+};
+
+const createPaymentSuccessNotification = async (userId, bookingId, roomTitle) => {
+  return Notification.create({
+    user: userId,
+    type: 'payment',
+    message: `Payment received for ${roomTitle || 'your booking'}. Your booking is confirmed.`,
+    link: `/billing?id=${bookingId}`,
+  });
+};
+
+const createBookingReminderAlert = async (userId, bookingId, roomTitle, fromDate) => {
+  return Notification.create({
+    user: userId,
+    type: 'booking',
+    message: `Reminder: your stay for ${roomTitle || 'your booking'} starts on ${new Date(
+      fromDate
+    ).toDateString()}.`,
+    link: `/booking/${bookingId}`,
+  });
+};
+
+const createBookingStatusNotification = async (userId, bookingId, roomTitle, status) => {
+  const normalizedStatus = String(status || '').toLowerCase();
+
+  const statusMap = {
+    approved: {
+      type: 'booking',
+      message: `Your booking for ${roomTitle || 'your room'} has been approved.`,
+      link: `/booking/${bookingId}`,
+    },
+    cancelled: {
+      type: 'booking',
+      message: `Your booking for ${roomTitle || 'your room'} has been cancelled.`,
+      link: `/booking/${bookingId}`,
+    },
+    hold: {
+      type: 'booking',
+      message: `Your booking for ${roomTitle || 'your room'} is on hold pending confirmation.`,
+      link: `/booking/${bookingId}`,
+    },
+  };
+
+  const config = statusMap[normalizedStatus];
+  if (!config) {
+    return null;
+  }
+
+  return Notification.create({
+    user: userId,
+    type: config.type,
+    message: config.message,
+    link: config.link,
+  });
+};
+
+const getBookingEmailRecipients = async (userId, guestDetails = {}) => {
+  try {
+    const user = await User.findById(userId).select('firstName lastName email');
+    const userEmail = String(user?.email || '').trim().toLowerCase();
+    const guestEmail = String(guestDetails?.email || '').trim().toLowerCase();
+
+    const recipients = [userEmail, guestEmail && guestEmail !== userEmail ? guestEmail : '']
+      .filter(Boolean)
+      .filter((value, index, array) => array.indexOf(value) === index);
+
+    return { user, recipients };
+  } catch (err) {
+    console.error('Booking email recipient lookup failed:', err.message || err);
+    return { user: null, recipients: [] };
+  }
+};
+
+const getBookingPhoneRecipients = async (userId, guestDetails = {}) => {
+  try {
+    const user = await User.findById(userId).select('firstName lastName phone');
+    const userPhone = String(user?.phone || '').trim();
+    const guestPhone = String(guestDetails?.phone || '').trim();
+
+    const recipients = [userPhone, guestPhone && guestPhone !== userPhone ? guestPhone : '']
+      .filter(Boolean)
+      .filter((value, index, array) => array.indexOf(value) === index);
+
+    return { user, recipients };
+  } catch (err) {
+    console.error('Booking SMS recipient lookup failed:', err.message || err);
+    return { user: null, recipients: [] };
+  }
+};
+
+const sendBookingConfirmation = async ({ userId, room, booking, guestDetails, subject }) => {
+  const { user, recipients } = await getBookingEmailRecipients(userId, guestDetails);
+
+  if (!recipients.length) {
+    console.warn('Booking email skipped: recipient email not found');
+    return 'skipped';
+  }
+
+  console.log('Booking confirmation email recipients:', {
+    bookingId: booking?._id,
+    recipients,
+    subject,
+  });
+
+  const results = await Promise.allSettled(
+    recipients.map((recipient) =>
+      sendEmail(
+        recipient,
+        subject || 'Booking Confirmed',
+        bookingTemplate(user || { firstName: 'Guest' }, room, booking)
+      )
+    )
+  );
+
+  const sentCount = results.filter((result) => {
+    if (result.status !== 'fulfilled') {
+      return false;
+    }
+
+    const acceptedRecipients = Array.isArray(result.value?.accepted)
+      ? result.value.accepted.map((value) => String(value || '').trim().toLowerCase())
+      : [];
+
+    return acceptedRecipients.length > 0;
+  }).length;
+
+  if (sentCount === 0) {
+    return 'failed';
+  }
+
+  return sentCount === results.length ? 'sent' : 'partial';
+};
+
+const sendBookingConfirmationWithStatus = async (params) => {
+  try {
+    return await sendBookingConfirmation(params);
+  } catch (err) {
+    console.error('Booking confirmation email failed:', err.message || err);
+    return 'failed';
+  }
+};
+
+const sendBookingSmsWithStatus = async ({ userId, room, booking, guestDetails, isPaymentReceived }) => {
+  try {
+    const { user, recipients } = await getBookingPhoneRecipients(userId, guestDetails);
+
+    if (!recipients.length) {
+      console.warn('Booking SMS skipped: recipient phone not found');
+      return 'skipped';
+    }
+
+    const guestName =
+      [guestDetails?.firstName, guestDetails?.lastName].filter(Boolean).join(' ') ||
+      [user?.firstName, user?.lastName].filter(Boolean).join(' ') ||
+      'Guest';
+
+    const smsBody = bookingSmsTemplate({
+      guestName,
+      roomTitle: room?.title || 'your room',
+      booking,
+      isPaymentReceived,
+    });
+
+    const results = await Promise.allSettled(recipients.map((recipient) => sendSMS(recipient, smsBody)));
+    const sentCount = results.filter(
+      (result) => result.status === 'fulfilled' && !result.value?.skipped
+    ).length;
+
+    if (sentCount === 0) {
+      const skippedOnly = results.every(
+        (result) => result.status === 'fulfilled' && result.value?.skipped
+      );
+      return skippedOnly ? 'skipped' : 'failed';
+    }
+
+    return sentCount === results.length ? 'sent' : 'partial';
+  } catch (err) {
+    console.error('Booking SMS failed:', err.message || err);
+    return 'failed';
+  }
+};
+
+const verifyWebhookSignature = (payloadBuffer, signature) => {
+  const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+
+  if (!webhookSecret) {
+    const error = new Error('Missing Razorpay webhook secret');
+    error.statusCode = 500;
+    throw error;
+  }
+
+  const expectedSignature = crypto
+    .createHmac('sha256', webhookSecret)
+    .update(payloadBuffer)
+    .digest('hex');
+
+  if (expectedSignature !== signature) {
+    const error = new Error('Invalid webhook signature');
+    error.statusCode = 400;
+    throw error;
+  }
+};
+
+const finalizePaidBooking = async ({
+  booking,
+  paymentId,
+  orderId,
+  fallbackUser,
+  subject,
+  logLabel,
+}) => {
+  const alreadyPaid = booking.paymentStatus === 'paid';
+
+  if (alreadyPaid) {
+    return { booking, emailStatus: 'skipped', alreadyPaid: true };
+  }
+
+  if (!booking.room || typeof booking.room !== 'object') {
+    booking = await Booking.findById(booking._id).populate('room');
+  }
+
+  booking.paymentStatus = 'paid';
+  booking.paymentMethod = 'online';
+  booking.status = booking.status === 'cancelled' ? 'cancelled' : 'approved';
+  booking.razorpayOrderId = orderId || booking.razorpayOrderId || null;
+  booking.razorpayPaymentId = paymentId || booking.razorpayPaymentId || null;
+  booking.expiresAt = null;
+  await booking.save();
+
+  const bookingUserId = booking.user || fallbackUser?._id || null;
+  const room = booking.room || (await Room.findById(booking.room));
+  const emailStatus = bookingUserId
+    ? await sendBookingConfirmationWithStatus({
+        userId: bookingUserId,
+        room,
+        booking,
+        guestDetails: booking.guestDetails,
+        subject: subject || 'Payment Successful - Booking Confirmed',
+      })
+    : 'skipped';
+  const smsStatus = bookingUserId
+    ? await sendBookingSmsWithStatus({
+        userId: bookingUserId,
+        room,
+        booking,
+        guestDetails: booking.guestDetails,
+        isPaymentReceived: true,
+      })
+    : 'skipped';
+
+  let notificationCreated = false;
+  let notification = null;
+
+  if (bookingUserId) {
+    try {
+      notification = await createPaymentSuccessNotification(bookingUserId, booking._id, room?.title);
+      notificationCreated = true;
+    } catch (notificationError) {
+      console.error(
+        `${logLabel || 'Paid booking'} notification failed:`,
+        notificationError.message || notificationError
+      );
+    }
+  }
+
+  return { booking, emailStatus, smsStatus, alreadyPaid: false, notificationCreated, notification };
 };
 
 const createBooking = async (req, res) => {
@@ -204,26 +493,103 @@ const createBooking = async (req, res) => {
         paymentStatus: 'pending',
         status: 'approved',
         guestDetails,
-        expiresAt: undefined,
+        expiresAt: null,
       });
 
       await attachBookingToUser(req.user._id, booking._id);
-      await createPaymentReminderNotification(req.user._id, booking._id, pricing.room.title);
+      const emailStatus = await sendBookingConfirmationWithStatus({
+        userId: req.user._id,
+        room: pricing.room,
+        booking,
+        guestDetails,
+        subject: 'Booking Confirmed, Payment Pending',
+      });
+      const smsStatus = await sendBookingSmsWithStatus({
+        userId: req.user._id,
+        room: pricing.room,
+        booking,
+        guestDetails,
+        isPaymentReceived: false,
+      });
+
+      let notificationCreated = false;
+      let notification = null;
+      try {
+        notification = await createPaymentReminderNotification(req.user._id, booking._id, pricing.room.title);
+        notificationCreated = true;
+      } catch (notificationError) {
+        console.error('Cash booking notification failed:', notificationError.message || notificationError);
+      }
 
       return res.status(201).json({
         success: true,
         booking,
         bookingData,
+        emailStatus,
+        smsStatus,
+        notificationCreated,
+        notification,
       });
     }
 
     const order = await createOrder(pricing.totalAmount);
+    const booking = await Booking.create({
+      user: req.user._id,
+      room: roomId,
+      fromDate,
+      toDate,
+      totalDays: pricing.totalDays,
+      subtotal: pricing.subtotal,
+      taxAmount: pricing.taxAmount,
+      grossAmount: pricing.grossAmount,
+      discountAmount: pricing.discountAmount,
+      totalAmount: pricing.totalAmount,
+      coupon: pricing.coupon,
+      paymentMethod: 'online',
+      paymentStatus: 'pending',
+      status: 'hold',
+      guestDetails,
+      razorpayOrderId: order.id,
+      expiresAt: null,
+    });
+
+    await attachBookingToUser(req.user._id, booking._id);
+
+    const emailStatus = await sendBookingConfirmationWithStatus({
+      userId: req.user._id,
+      room: pricing.room,
+      booking,
+      guestDetails,
+      subject: 'Booking Confirmed, Payment Pending',
+    });
+    const smsStatus = await sendBookingSmsWithStatus({
+      userId: req.user._id,
+      room: pricing.room,
+      booking,
+      guestDetails,
+      isPaymentReceived: false,
+    });
+
+    let notificationCreated = false;
+    let notification = null;
+    try {
+      notification = await createPaymentReminderNotification(req.user._id, booking._id, pricing.room.title);
+      notificationCreated = true;
+    } catch (notificationError) {
+      console.error('Online booking notification failed:', notificationError.message || notificationError);
+    }
 
     return res.json({
       success: true,
       order,
       key: process.env.RAZORPAY_KEY_ID,
+      booking,
+      bookingId: booking._id,
       bookingData,
+      emailStatus,
+      smsStatus,
+      notificationCreated,
+      notification,
     });
   } catch (err) {
     console.error('Create booking error:', err);
@@ -294,20 +660,24 @@ const verifyExistingBookingPayment = async (req, res) => {
       return res.status(400).json({ message: 'Payment verification failed' });
     }
 
-    booking.paymentStatus = 'paid';
-    booking.paymentMethod = 'online';
-    booking.razorpayOrderId = orderId || booking.razorpayOrderId;
-    booking.razorpayPaymentId = paymentId || null;
-    await booking.save();
-
-    await Notification.create({
-      user: req.user._id,
-      type: 'payment',
-      message: `Payment received for ${booking.room?.title || 'your booking'}.`,
-      link: `/booking/${booking._id}`,
+    const result = await finalizePaidBooking({
+      booking,
+      paymentId,
+      orderId,
+      fallbackUser: req.user,
+      subject: 'Payment Successful - Booking Confirmed',
+      logLabel: 'Existing booking payment',
     });
 
-    return res.json({ success: true, booking });
+    return res.json({
+      success: true,
+      booking: result.booking,
+      emailStatus: result.emailStatus,
+      smsStatus: result.smsStatus,
+      notificationCreated: result.notificationCreated,
+      notification: result.notification,
+      alreadyPaid: result.alreadyPaid,
+    });
   } catch (err) {
     console.error('Verify existing booking payment error:', err);
     return res.status(500).json({ message: 'Internal Server Error', error: err.message });
@@ -371,24 +741,114 @@ const verifyBookingPayment = async (req, res) => {
       razorpayOrderId: orderId || null,
       razorpayPaymentId: paymentId || null,
       guestDetails: bookingData.guestDetails,
-      expiresAt: undefined,
+      expiresAt: null,
     });
 
     await attachBookingToUser(req.user._id, booking._id);
+    const emailStatus = await sendBookingConfirmationWithStatus({
+      userId: req.user._id,
+      room: pricing.room,
+      booking,
+      guestDetails: bookingData.guestDetails,
+      subject: 'Payment Successful - Booking Confirmed',
+    });
+    const smsStatus = await sendBookingSmsWithStatus({
+      userId: req.user._id,
+      room: pricing.room,
+      booking,
+      guestDetails: bookingData.guestDetails,
+      isPaymentReceived: true,
+    });
 
-    const room = pricing.room;
-    if (req.user.email) {
-      sendEmail(
-        req.user.email,
-        'Booking Confirmed',
-        bookingTemplate(req.user, room, booking)
-      ).catch(console.error);
+    let notificationCreated = false;
+    let notification = null;
+    try {
+      notification = await createPaymentSuccessNotification(req.user._id, booking._id, pricing.room?.title);
+      notificationCreated = true;
+    } catch (notificationError) {
+      console.error('Online booking payment notification failed:', notificationError.message || notificationError);
     }
 
-    return res.json({ success: true, booking });
+    return res.json({ success: true, booking, emailStatus, smsStatus, notificationCreated, notification });
   } catch (err) {
     console.error('Verify booking error:', err);
     return res.status(500).json({ message: 'Internal Server Error', error: err.message });
+  }
+};
+
+const handleRazorpayWebhook = async (req, res) => {
+  try {
+    const payloadBuffer = Buffer.isBuffer(req.body)
+      ? req.body
+      : Buffer.from(JSON.stringify(req.body || {}));
+
+    verifyWebhookSignature(payloadBuffer, req.headers['x-razorpay-signature']);
+
+    const event = JSON.parse(payloadBuffer.toString('utf8'));
+    const eventName = String(event?.event || '');
+
+    if (eventName === 'payment.failed') {
+      const failedOrderId = event?.payload?.payment?.entity?.order_id || null;
+      if (failedOrderId) {
+        await Booking.updateOne(
+          {
+            razorpayOrderId: failedOrderId,
+            paymentStatus: 'pending',
+            status: 'hold',
+          },
+          {
+            $set: {
+              paymentStatus: 'failed',
+            },
+          }
+        );
+      }
+
+      return res.json({ received: true, event: eventName });
+    }
+
+    if (!['payment.captured', 'order.paid'].includes(eventName)) {
+      return res.json({ received: true, ignored: true, event: eventName });
+    }
+
+    const paymentEntity = event?.payload?.payment?.entity || {};
+    const orderEntity = event?.payload?.order?.entity || {};
+    const orderId = paymentEntity.order_id || orderEntity.id || null;
+    const paymentId = paymentEntity.id || null;
+
+    if (!orderId) {
+      return res.json({ received: true, ignored: true, reason: 'missing_order_id' });
+    }
+
+    const booking = await Booking.findOne({ razorpayOrderId: orderId }).populate('room');
+
+    if (!booking || booking.status === 'cancelled') {
+      return res.json({ received: true, ignored: true, reason: 'booking_not_found_or_cancelled' });
+    }
+
+    const result = await finalizePaidBooking({
+      booking,
+      paymentId,
+      orderId,
+      fallbackUser: null,
+      subject: booking.status === 'approved' ? 'Payment Successful - Booking Confirmed' : 'Booking Confirmed',
+      logLabel: 'Razorpay webhook',
+    });
+
+    return res.json({
+      received: true,
+      bookingId: result.booking._id,
+      emailStatus: result.emailStatus,
+      smsStatus: result.smsStatus,
+      alreadyPaid: result.alreadyPaid,
+      notificationCreated: result.notificationCreated,
+      notification: result.notification,
+    });
+  } catch (err) {
+    console.error('Razorpay webhook error:', err);
+    return res.status(err.statusCode || 500).json({
+      message: err.message || 'Webhook processing failed',
+    });
   }
 };
 
@@ -436,7 +896,7 @@ const getAllBookings = async (req, res) => {
 
 const updateBookingStatus = async (req, res) => {
   try {
-    const booking = await Booking.findById(req.params.id);
+    const booking = await Booking.findById(req.params.id).populate('room');
 
     if (!booking) {
       return res.status(404).json({ message: 'Booking not found' });
@@ -450,7 +910,22 @@ const updateBookingStatus = async (req, res) => {
 
     await booking.save();
 
-    return res.json({ success: true, booking });
+    let notification = null;
+    let notificationCreated = false;
+
+    try {
+      notification = await createBookingStatusNotification(
+        booking.user,
+        booking._id,
+        booking.room?.title,
+        booking.status
+      );
+      notificationCreated = Boolean(notification);
+    } catch (notificationError) {
+      console.error('Update booking status notification failed:', notificationError.message || notificationError);
+    }
+
+    return res.json({ success: true, booking, notificationCreated, notification });
   } catch (err) {
     return res.status(500).json({ message: 'Internal Server Error' });
   }
@@ -516,7 +991,7 @@ const getAnalytics = async (req, res) => {
 
 const cancelBooking = async (req, res) => {
   try {
-    const booking = await Booking.findById(req.params.id);
+    const booking = await Booking.findById(req.params.id).populate('room');
 
     if (!booking) {
       return res.status(404).json({ message: 'Booking not found' });
@@ -530,14 +1005,69 @@ const cancelBooking = async (req, res) => {
     booking.paymentStatus = 'cancelled';
     await booking.save();
 
+    let notification = null;
+    let notificationCreated = false;
+
+    try {
+      notification = await createBookingStatusNotification(
+        booking.user,
+        booking._id,
+        booking.room?.title,
+        booking.status
+      );
+      notificationCreated = Boolean(notification);
+    } catch (notificationError) {
+      console.error('Cancel booking notification failed:', notificationError.message || notificationError);
+    }
+
     return res.json({
       success: true,
       message: 'Booking cancelled successfully',
       booking,
+      notificationCreated,
+      notification,
     });
   } catch (err) {
     console.error('Cancel booking error:', err);
     return res.status(500).json({ message: 'Internal Server Error' });
+  }
+};
+
+const resendBookingConfirmationEmail = async (req, res) => {
+  try {
+    const booking = await Booking.findById(req.params.id).populate('room');
+
+    if (!booking) {
+      return res.status(404).json({ message: 'Booking not found' });
+    }
+
+    if (String(booking.user) !== String(req.user._id)) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    if (booking.status === 'cancelled') {
+      return res.status(400).json({ message: 'Cancelled booking email cannot be resent' });
+    }
+
+    const emailStatus = await sendBookingConfirmationWithStatus({
+      userId: req.user._id,
+      room: booking.room,
+      booking,
+      guestDetails: booking.guestDetails,
+      subject:
+        booking.paymentStatus === 'paid'
+          ? 'Payment Successful - Booking Confirmed'
+          : 'Booking Confirmed, Payment Pending',
+    });
+
+    return res.json({
+      success: true,
+      booking,
+      emailStatus,
+    });
+  } catch (err) {
+    console.error('Resend booking confirmation email error:', err);
+    return res.status(500).json({ message: 'Internal Server Error', error: err.message });
   }
 };
 
@@ -546,9 +1076,11 @@ module.exports = {
   verifyBookingPayment,
   createExistingBookingPaymentOrder,
   verifyExistingBookingPayment,
+  handleRazorpayWebhook,
   getMyBookings,
   getAllBookings,
   updateBookingStatus,
   getAnalytics,
   cancelBooking,
+  resendBookingConfirmationEmail,
 };
